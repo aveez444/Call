@@ -149,6 +149,32 @@ def handle_recording():
     return twiml_response(resp)
 
 
+@app.route("/make-call", methods=["POST"])
+def make_call():
+    body = request.get_json(force=True, silent=True) or {}
+    to = body.get("to")
+    twiml_url = body.get("twiml_url") or request.url_root.rstrip("/") + "/voice"
+
+    if not to:
+        return jsonify({"error": "missing 'to' field"}), 400
+
+    numbers = to if isinstance(to, list) else [to]
+    results = []
+
+    for n in numbers:
+        try:
+            call = client.calls.create(
+                url=twiml_url,
+                to=n,
+                from_=TWILIO_FROM_NUMBER
+            )
+            results.append({"to": n, "status": "queued", "sid": call.sid})
+        except Exception as e:
+            results.append({"to": n, "status": "error", "error": str(e)})
+
+    return jsonify(results)
+
+
 # ---------------- Run (dev only) ----------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
