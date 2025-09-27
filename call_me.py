@@ -16,219 +16,139 @@ if not (TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER):
 client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 app = Flask(__name__)
 
-# --------------- IVR CONTENT (customize for healthcare) ----------------
-# Department numbers (update to your clinic numbers, E.164)
+# Replace these with real destination numbers in E.164
 DEPARTMENTS = {
-    "appointments": "+91XXXXXXXXXX",
-    "nurse": "+91YYYYYYYYYY",
-    "pharmacy": "+91ZZZZZZZZZZ",
-    "emergency": "+911112223334",   # example emergency contact / forwarding
-    "operator": "+1AABBCCDDEE"      # operator / receptionist
+    "appointments": "+919999999999",   # used only if you want to dial clinic directly
+    "emergency": "+911112223334",
+    "callback_owner": "+919888888888"  # your system/user to receive callback alerts (optional)
 }
 
-# Helper to produce TwiML response
 def twiml_response(twiml):
     return Response(str(twiml), mimetype="text/xml")
 
-# --------------- Incoming / Outbound voice entrypoint -------------------
-# Configure your Twilio phone number's Voice URL to point to /voice (full public URL)
+
+# ---------------- Main entrypoint ----------------
 @app.route("/voice", methods=["POST", "GET"])
 def voice():
-    """Initial language selection"""
+    """Main menu: 1 Appointments, 2 Emergency, 3 Pathology"""
     resp = VoiceResponse()
-    gather = Gather(num_digits=1, action="/handle-language", method="POST")
-    gather.say("Welcome to HealthyCare Clinic. For English press 1. For Hindi press 2. For Marathi press 3.", voice="alice", language="en-US")
+    base = request.url_root.rstrip("/")  # absolute base URL that Twilio can reach
+
+    gather = Gather(num_digits=1, action=f"{base}/handle-main", method="POST", timeout=8)
+    gather.say("Welcome to HealthyCare Clinic. For appointment booking press 1. For emergency help press 2. For pathology tests press 3.", voice="alice", language="en-US")
     resp.append(gather)
+
     resp.say("We did not receive any input. Goodbye.", voice="alice", language="en-US")
     resp.hangup()
     return twiml_response(resp)
 
-# --------------- Language handler -> presents language specific menu -----------
-@app.route("/handle-language", methods=["POST"])
-def handle_language():
+
+# ---------------- Handle main selection ----------------
+@app.route("/handle-main", methods=["POST"])
+def handle_main():
     digits = request.values.get("Digits", "")
     resp = VoiceResponse()
+    base = request.url_root.rstrip("/")
 
     if digits == "1":
-        # English menu
-        gather = Gather(num_digits=1, action="/handle-menu?lang=en", method="POST")
-        gather.say("You are in English. For Appointments press 1. For Nurse advice press 2. For Pharmacy press 3. To repeat press 9. To speak to an operator press 0.", voice="alice", language="en-US")
+        # Appointment: ask which doctor
+        gather = Gather(num_digits=1, action=f"{base}/handle-appointment-doctor", method="POST", timeout=8)
+        gather.say("For appointment booking. For Dental press 1. For General Doctor press 2. For Orthopaedic press 3.", voice="alice", language="en-US")
         resp.append(gather)
-        resp.say("No input received. Goodbye.", voice="alice", language="en-US")
-        resp.hangup()
+        resp.say("No input received. Returning to main menu.", voice="alice", language="en-US")
+        resp.redirect(f"{base}/voice", method="POST")
+        return twiml_response(resp)
+
     elif digits == "2":
-        # Hindi menu
-        gather = Gather(num_digits=1, action="/handle-menu?lang=hi", method="POST")
-        gather.say("आप हिंदी मेन्यू में हैं। अपॉइंटमेंट के लिए 1, नर्स से सलाह के लिए 2, फार्मेसी के लिए 3, दोहराने के लिए 9, ऑपरेटर के लिए 0 दबाएं।", voice="alice", language="hi-IN")
-        resp.append(gather)
-        resp.say("कोई इनपुट प्राप्त नहीं हुआ। अलविदा।", voice="alice", language="hi-IN")
+        # Emergency - dial emergency number immediately
+        resp.say("Connecting you to emergency services. Please hold.", voice="alice", language="en-US")
+        resp.dial(DEPARTMENTS["emergency"], timeout=30)
+        resp.say("Unable to connect to emergency number. Goodbye.", voice="alice", language="en-US")
         resp.hangup()
+        return twiml_response(resp)
+
     elif digits == "3":
-        # Marathi menu
-        gather = Gather(num_digits=1, action="/handle-menu?lang=mr", method="POST")
-        gather.say("आपण मराठी मेनूमध्ये आहात. अपॉइंटमेंटसाठी 1 दाबा, नर्स सल्ल्यासाठी 2, फार्मसीसाठी 3, पुन्हा ऐकण्यासाठी 9, ऑपरेटरसाठी 0 दाबा.", voice="alice", language="mr-IN")
+        # Pathology submenu
+        gather = Gather(num_digits=1, action=f"{base}/handle-pathology", method="POST", timeout=8)
+        gather.say("Pathology tests. For regular blood test press 1. For full body profile press 2. For heart check up press 3.", voice="alice", language="en-US")
         resp.append(gather)
-        resp.say("कोणतीही निवड मिळाली नाही. अलविदा.", voice="alice", language="mr-IN")
-        resp.hangup()
+        resp.say("No input received. Returning to main menu.", voice="alice", language="en-US")
+        resp.redirect(f"{base}/voice", method="POST")
+        return twiml_response(resp)
+
     else:
         resp.say("Invalid selection. Goodbye.", voice="alice", language="en-US")
         resp.hangup()
+        return twiml_response(resp)
 
-    return twiml_response(resp)
 
-# --------------- Menu option handler (language-aware) --------------------
-@app.route("/handle-menu", methods=["POST"])
-def handle_menu():
-    lang = request.args.get("lang", "en")
+# ---------------- Appointment doctor handler ----------------
+@app.route("/handle-appointment-doctor", methods=["POST"])
+def handle_appointment_doctor():
     digits = request.values.get("Digits", "")
     resp = VoiceResponse()
+    # Map digits to doctor types
+    doctor_map = {"1": "Dental", "2": "General Practitioner", "3": "Orthopaedic"}
 
-    # map digits to actions
-    if digits == "1":
-        # Appointments
-        resp.say(translate("Connecting you to Appointments. Please hold.", lang), voice="alice", language=lang_to_voice(lang))
-        resp.dial(DEPARTMENTS["appointments"], timeout=30)
-        resp.say(translate("All agents are busy. Please try again later.", lang), voice="alice", language=lang_to_voice(lang))
+    doc = doctor_map.get(digits)
+    if doc:
+        # Confirm and offer to record additional info (optional)
+        resp.say(f"Thank you. You selected {doc}. Our team will call you soon to schedule a convenient time.", voice="alice", language="en-US")
+        # Optional: record a short message (caller can leave details)
+        resp.say("If you would like to leave a short message with your preferred time or details, please record after the tone. Press hash when finished.", voice="alice", language="en-US")
+        resp.record(max_length=60, finish_on_key="#", action=f"{request.url_root.rstrip('/')}/handle-recording?type=appointment&doctor={doc}", method="POST")
+        resp.say("Thank you. Goodbye.", voice="alice", language="en-US")
         resp.hangup()
-    elif digits == "2":
-        # Nurse advice
-        resp.say(translate("Connecting you to Nurse. Please hold.", lang), voice="alice", language=lang_to_voice(lang))
-        resp.dial(DEPARTMENTS["nurse"], timeout=30)
-        resp.say(translate("All agents are busy. Please try again later.", lang), voice="alice", language=lang_to_voice(lang))
-        resp.hangup()
-    elif digits == "3":
-        # Pharmacy
-        resp.say(translate("Connecting you to Pharmacy. Please hold.", lang), voice="alice", language=lang_to_voice(lang))
-        resp.dial(DEPARTMENTS["pharmacy"], timeout=30)
-        resp.say(translate("All agents are busy. Please try again later.", lang), voice="alice", language=lang_to_voice(lang))
-        resp.hangup()
-    elif digits == "9":
-        # repeat menu
-        gather = Gather(num_digits=1, action=f"/handle-menu?lang={lang}", method="POST")
-        gather.say(translate_menu(lang), voice="alice", language=lang_to_voice(lang))
-        resp.append(gather)
-        resp.say(translate("No input received. Goodbye.", lang), voice="alice", language=lang_to_voice(lang))
-        resp.hangup()
-    elif digits == "0":
-        # operator -> record voicemail if operator not available
-        resp.say(translate("Please hold while we connect you to an operator.", lang), voice="alice", language=lang_to_voice(lang))
-        resp.dial(DEPARTMENTS["operator"], timeout=30)
-        resp.say(translate("No operator is available. Please leave a voicemail after the tone.", lang), voice="alice", language=lang_to_voice(lang))
-        # record and post to voicemail-callback for processing/store
-        resp.record(max_length=120, action="/voicemail-callback", method="POST")
-        resp.say(translate("Thank you. Goodbye.", lang), voice="alice", language=lang_to_voice(lang))
-        resp.hangup()
+        return twiml_response(resp)
     else:
-        resp.say(translate("Invalid option. Goodbye.", lang), voice="alice", language=lang_to_voice(lang))
+        resp.say("Invalid selection. Returning to main menu.", voice="alice", language="en-US")
+        resp.redirect(f"{request.url_root.rstrip('/')}/voice", method="POST")
+        return twiml_response(resp)
+
+
+# ---------------- Pathology handler ----------------
+@app.route("/handle-pathology", methods=["POST"])
+def handle_pathology():
+    digits = request.values.get("Digits", "")
+    resp = VoiceResponse()
+    test_map = {"1": "Regular blood test", "2": "Full body profile", "3": "Heart check up"}
+
+    test = test_map.get(digits)
+    if test:
+        resp.say(f"Thank you. You selected {test}. Our staff will call you shortly to arrange an appointment and share instructions.", voice="alice", language="en-US")
+        # Optional: let caller leave a message with preferred timing
+        resp.say("If you want to leave a message for preferred timing, record after the tone. Press hash when finished.", voice="alice", language="en-US")
+        resp.record(max_length=60, finish_on_key="#", action=f"{request.url_root.rstrip('/')}/handle-recording?type=pathology&test={test}", method="POST")
+        resp.say("Thank you. Goodbye.", voice="alice", language="en-US")
         resp.hangup()
+        return twiml_response(resp)
+    else:
+        resp.say("Invalid selection. Returning to main menu.", voice="alice", language="en-US")
+        resp.redirect(f"{request.url_root.rstrip('/')}/voice", method="POST")
+        return twiml_response(resp)
 
-    return twiml_response(resp)
 
-@app.route("/voicemail-callback", methods=["POST"])
-def voicemail_callback():
-    # Twilio will send RecordingUrl, RecordingSid, RecordingDuration etc.
+# ---------------- Recording callback ----------------
+@app.route("/handle-recording", methods=["POST"])
+def handle_recording():
+    # Twilio posts RecordingUrl, RecordingSid, RecordingDuration, From, etc.
     recording_url = request.values.get("RecordingUrl")
     recording_sid = request.values.get("RecordingSid")
     duration = request.values.get("RecordingDuration")
-    from_number = request.values.get("From")
-    # TODO: persist this to S3 / database or POST to your backend
-    # For now just return a simple TwiML thanks
+    caller = request.values.get("From")
+    # Optional: type and extra info passed as query string
+    rtype = request.args.get("type")
+    extra = request.args.get("doctor") or request.args.get("test")
+
+    # TODO: persist recording_url + metadata to DB or S3 or notify staff
+    print(f"Received recording: sid={recording_sid}, url={recording_url}, duration={duration}, from={caller}, type={rtype}, extra={extra}")
+
     resp = VoiceResponse()
-    resp.say("Thank you for your message. Goodbye.", voice="alice", language="en-US")
+    resp.say("Your message has been recorded. We will contact you soon. Goodbye.", voice="alice", language="en-US")
     resp.hangup()
-    # Example: you could asynchronously fetch recording_url and submit to STT
-    print(f"Voicemail recording: sid={recording_sid}, url={recording_url}, duration={duration}, from={from_number}")
     return twiml_response(resp)
 
-# --------------- Utility functions --------------------
-def lang_to_voice(lang):
-    if lang == "hi":
-        return "hi-IN"
-    if lang == "mr":
-        return "mr-IN"
-    return "en-US"
 
-def translate(text, lang):
-    # Minimal translations (expand as needed)
-    mapping = {
-        "Connecting you to Appointments. Please hold.": {
-            "hi": "आपको अपॉइंटमेंट से जोड़ रहे हैं। कृपया प्रतीक्षा करें।",
-            "mr": "आपल्याला अपॉइंटमेंटशी जोडले जात आहे. कृपया थांबा."
-        },
-        "All agents are busy. Please try again later.": {
-            "hi": "सभी एजेंट व्यस्त हैं। कृपया बाद में प्रयास करें।",
-            "mr": "सर्व एजंट व्यस्त आहेत. कृपया नंतर प्रयत्न करा."
-        },
-        "Connecting you to Nurse. Please hold.": {
-            "hi": "आपको नर्स से जोड़ रहे हैं। कृपया प्रतीक्षा करें।",
-            "mr": "आपल्याला नर्सशी जोडले जात आहे. कृपया थांबा."
-        },
-        "Connecting you to Pharmacy. Please hold.": {
-            "hi": "आपको फार्मेसी से जोड़ रहे हैं। कृपया प्रतीक्षा करें।",
-            "mr": "आपल्याला फार्मसीशी जोडले जात आहे. कृपया थांबा."
-        },
-        "Please hold while we connect you to an operator.": {
-            "hi": "कृपया प्रतीक्षा करें, हम आपको ऑपरेटर से जोड़ रहे हैं।",
-            "mr": "कृपया थांबा, आम्ही तुम्हाला ऑपरेटरशी जोडत आहोत."
-        },
-        "No input received. Goodbye.": {
-            "hi": "कोई इनपुट प्राप्त नहीं हुआ। अलविदा।",
-            "mr": "कोणतीही निवड प्राप्त झाली नाही. अलविदा."
-        },
-        "Invalid option. Goodbye.": {
-            "hi": "अमान्य विकल्प। अलविदा।",
-            "mr": "अवैध पर्याय. अलविदा."
-        },
-        "Thank you. Goodbye.": {
-            "hi": "धन्यवाद। अलविदा।",
-            "mr": "धन्यवाद. अलविदा."
-        }
-    }
-    if text in mapping and lang in mapping[text]:
-        return mapping[text][lang]
-    return text
-
-def translate_menu(lang):
-    if lang == "hi":
-        return "बिक्री के लिए 1, नर्स के लिए 2, फार्मेसी के लिए 3, मेन्यू दोहराने के लिए 9, ऑपरेटर के लिए 0 दबाएँ।"
-    if lang == "mr":
-        return "अपॉइंटमेंटसाठी 1 दाबा, नर्ससाठी 2, फार्मसीसाठी 3, पुन्हा ऐकण्यासाठी 9, ऑपरेटरसाठी 0 दाबा."
-    return "For Appointments press 1. For Nurse advice press 2. For Pharmacy press 3. To repeat press 9. To speak to an operator press 0."
-
-# --------------- Outbound call endpoint --------------------
-@app.route("/make-call", methods=["POST"])
-def make_call():
-    """
-    JSON body example:
-    {
-      "to": ["+919876543210", "+919812345678"],   # single or list of numbers
-      "twiml_url": "https://your-public-domain/voice"  # optional, defaults to /voice
-    }
-    """
-    body = request.get_json(force=True, silent=True) or {}
-    to = body.get("to")
-    twiml_url = body.get("twiml_url") or request.url_root.rstrip("/") + "/voice"
-
-    if not to:
-        return jsonify({"error": "missing 'to' field"}), 400
-
-    numbers = to if isinstance(to, list) else [to]
-    results = []
-
-    for n in numbers:
-        try:
-            call = client.calls.create(
-                url=twiml_url,
-                to=n,
-                from_=TWILIO_FROM_NUMBER
-            )
-            results.append({"to": n, "status": "queued", "sid": call.sid})
-        except Exception as e:
-            results.append({"to": n, "status": "error", "error": str(e)})
-
-    return jsonify(results)
-
-# --------------- run app --------------------
+# ---------------- Run (dev only) ----------------
 if __name__ == "__main__":
-    # For development only. In production, use gunicorn/uwsgi.
     app.run(host="0.0.0.0", port=5000, debug=True)
