@@ -37,10 +37,10 @@ def voice():
     gather = Gather(num_digits=1, action=f"{base}/handle-main", method="POST", timeout=8)
     # Using Amazon Polly voice for better quality
     gather.say("Welcome to HealthyCare Clinic. For appointment booking press 1. For emergency help press 2. For pathology tests press 3.", 
-               voice="polly.Joanna", language="en-US")
+               voice="polly.Kendra", language="en-US")
     resp.append(gather)
 
-    resp.say("We did not receive any input. Goodbye.", voice="polly.Joanna", language="en-US")
+    resp.say("We did not receive any input. Goodbye.", voice="polly.Kendra", language="en-US")
     resp.hangup()
     return twiml_response(resp)
 
@@ -55,31 +55,31 @@ def handle_main():
     if digits == "1":
         # Appointment: ask which doctor
         gather = Gather(num_digits=1, action=f"{base}/handle-appointment-doctor", method="POST", timeout=8)
-        gather.say("For appointment booking. For Dental press 1. For General Doctor press 2. For Orthopaedic press 3.", voice="polly.Joanna", language="en-US")
+        gather.say("For appointment booking. For Dental press 1. For General Doctor press 2. For Orthopaedic press 3.", voice="polly.Kendra", language="en-US")
         resp.append(gather)
-        resp.say("No input received. Returning to main menu.", voice="polly.Joanna", language="en-US")
+        resp.say("No input received. Returning to main menu.", voice="polly.Kendra", language="en-US")
         resp.redirect(f"{base}/voice", method="POST")
         return twiml_response(resp)
 
     elif digits == "2":
         # Emergency - dial emergency number immediately
-        resp.say("Connecting you to emergency services. Please hold.", voice="polly.Joanna", language="en-US")
+        resp.say("Connecting you to emergency services. Please hold.", voice="polly.Kendra", language="en-US")
         resp.dial(DEPARTMENTS["emergency"], timeout=30)
-        resp.say("Unable to connect to emergency number. Goodbye.", voice="polly.Joanna", language="en-US")
+        resp.say("Unable to connect to emergency number. Goodbye.", voice="polly.Kendra", language="en-US")
         resp.hangup()
         return twiml_response(resp)
 
     elif digits == "3":
         # Pathology submenu
         gather = Gather(num_digits=1, action=f"{base}/handle-pathology", method="POST", timeout=8)
-        gather.say("Pathology tests. For regular blood test press 1. For full body profile press 2. For heart check up press 3.", voice="polly.Joanna", language="en-US")
+        gather.say("Pathology tests. For regular blood test press 1. For full body profile press 2. For heart check up press 3.", voice="polly.Kendra", language="en-US")
         resp.append(gather)
-        resp.say("No input received. Returning to main menu.", voice="polly.Joanna", language="en-US")
+        resp.say("No input received. Returning to main menu.", voice="polly.Kendra", language="en-US")
         resp.redirect(f"{base}/voice", method="POST")
         return twiml_response(resp)
 
     else:
-        resp.say("Invalid selection. Goodbye.", voice="polly.Joanna", language="en-US")
+        resp.say("Invalid selection. Goodbye.", voice="polly.Kendra", language="en-US")
         resp.hangup()
         return twiml_response(resp)
 
@@ -95,15 +95,15 @@ def handle_appointment_doctor():
     doc = doctor_map.get(digits)
     if doc:
         # Confirm and offer to record additional info (optional)
-        resp.say(f"Thank you. You selected {doc}. Our team will call you soon to schedule a convenient time.", voice="polly.Joanna", language="en-US")
+        resp.say(f"Thank you. You selected {doc}. Our team will call you soon to schedule a convenient time.", voice="polly.Kendra", language="en-US")
         # Optional: record a short message (caller can leave details)
-        resp.say("If you would like to leave a short message with your preferred time or details, please record after the tone. Press hash when finished.", voice="polly.Joanna", language="en-US")
+        resp.say("If you would like to leave a short message with your preferred time or details, please record after the tone. Press hash when finished.", voice="polly.Kendra", language="en-US")
         resp.record(max_length=60, finish_on_key="#", action=f"{request.url_root.rstrip('/')}/handle-recording?type=appointment&doctor={doc}", method="POST")
-        resp.say("Thank you. Goodbye.", voice="polly.Joanna", language="en-US")
+        resp.say("Thank you. Goodbye.", voice="polly.Kendra", language="en-US")
         resp.hangup()
         return twiml_response(resp)
     else:
-        resp.say("Invalid selection. Returning to main menu.", voice="polly.Joanna", language="en-US")
+        resp.say("Invalid selection. Returning to main menu.", voice="polly.Kendra", language="en-US")
         resp.redirect(f"{request.url_root.rstrip('/')}/voice", method="POST")
         return twiml_response(resp)
 
@@ -117,15 +117,15 @@ def handle_pathology():
 
     test = test_map.get(digits)
     if test:
-        resp.say(f"Thank you. You selected {test}. Our staff will call you shortly to arrange an appointment and share instructions.", voice="polly.Joanna", language="en-US")
+        resp.say(f"Thank you. You selected {test}. Our staff will call you shortly to arrange an appointment and share instructions.", voice="polly.Kendra", language="en-US")
         # Optional: let caller leave a message with preferred timing
-        resp.say("If you want to leave a message for preferred timing, record after the tone. Press hash when finished.", voice="polly.Joanna", language="en-US")
+        resp.say("If you want to leave a message for preferred timing, record after the tone. Press hash when finished.", voice="polly.Kendra", language="en-US")
         resp.record(max_length=60, finish_on_key="#", action=f"{request.url_root.rstrip('/')}/handle-recording?type=pathology&test={test}", method="POST")
-        resp.say("Thank you. Goodbye.", voice="polly.Joanna", language="en-US")
+        resp.say("Thank you. Goodbye.", voice="polly.Kendra", language="en-US")
         resp.hangup()
         return twiml_response(resp)
     else:
-        resp.say("Invalid selection. Returning to main menu.", voice="polly.Joanna", language="en-US")
+        resp.say("Invalid selection. Returning to main menu.", voice="polly.Kendra", language="en-US")
         resp.redirect(f"{request.url_root.rstrip('/')}/voice", method="POST")
         return twiml_response(resp)
 
@@ -146,7 +146,7 @@ def handle_recording():
     print(f"Received recording: sid={recording_sid}, url={recording_url}, duration={duration}, from={caller}, type={rtype}, extra={extra}")
 
     resp = VoiceResponse()
-    resp.say("Your message has been recorded. We will contact you soon. Goodbye.", voice="polly.Joanna", language="en-US")
+    resp.say("Your message has been recorded. We will contact you soon. Goodbye.", voice="polly.Kendra", language="en-US")
     resp.hangup()
     return twiml_response(resp)
 
